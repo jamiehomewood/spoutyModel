@@ -1,0 +1,8 @@
+# runtime state written by serve.py
+state.json
+__pycache__/
+*.part
+
+# models you upload while using it (keep the bundled demo)
+models/*
+!models/furosemide_box.glb

@@ -1,0 +1,173 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>spoutyModel</title>
+<link rel="icon" href="data:,">
+<script type="importmap">
+{ "imports": {
+    "three": "./vendor/three/build/three.module.js",
+    "three/addons/": "./vendor/three/jsm/"
+} }
+</script>
+<style>
+  :root {
+    --panel: rgba(20, 21, 26, 0.9); --line: rgba(255,255,255,0.12); --text: #e9e9ec; --muted: #9a9ca6;
+    --accent: #5ea2ff; --accent-ink: #0b1220; --warn: #f2b35c;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #000; color: var(--text);
+    font: 13px/1.35 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  #stage, #stage canvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
+  body.igloo .ui { display: none !important; }
+
+  #hud { position: fixed; left: 12px; top: 12px; display: flex; gap: 8px; align-items: center; pointer-events: none; }
+  #modeChip { padding: 6px 10px; border-radius: 999px; background: var(--panel); border: 1px solid var(--line);
+    font-weight: 600; letter-spacing: .04em; font-size: 12px; }
+  #modeChip.object { background: var(--accent); color: var(--accent-ink); border-color: transparent; }
+  #hint { color: var(--muted); background: rgba(0,0,0,.45); padding: 5px 9px; border-radius: 8px; font-size: 12px; }
+  #status { position: fixed; left: 12px; bottom: 12px; padding: 6px 10px; border-radius: 8px; background: var(--panel);
+    border: 1px solid var(--line); font-size: 12px; max-width: 60vw; }
+  #status:empty { display: none; }
+  #status.warn { color: var(--warn); }
+
+  #panelToggle { position: fixed; right: 12px; top: 12px; z-index: 3; width: 40px; height: 40px; border-radius: 10px;
+    background: var(--panel); color: var(--text); border: 1px solid var(--line); font-size: 18px; cursor: pointer; }
+  #panel { position: fixed; right: 12px; top: 60px; bottom: 12px; width: 300px; overflow-y: auto; z-index: 2;
+    background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 4px 14px 14px; }
+  #panel.hidden { display: none; }
+  @media (max-width: 560px) { #panel { left: 12px; width: auto; } }
+
+  section { border-bottom: 1px solid var(--line); padding: 12px 0; }
+  section:last-child { border-bottom: 0; }
+  h2 { margin: 0 0 8px; font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); font-weight: 600; }
+  .row { display: flex; gap: 6px; align-items: center; margin: 6px 0; }
+  .row > label { flex: 0 0 70px; color: var(--muted); }
+  .row input[type=range] { flex: 1; min-width: 0; accent-color: var(--accent); }
+  .row output { flex: 0 0 62px; white-space: nowrap; text-align: right; font-variant-numeric: tabular-nums; color: var(--muted); }
+  .seg { display: flex; flex: 1; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+  .seg button { flex: 1; }
+  button { background: rgba(255,255,255,0.06); color: var(--text); border: 0; padding: 8px 6px; font: inherit; cursor: pointer; }
+  button:hover { background: rgba(255,255,255,0.12); }
+  button.on { background: var(--accent); color: var(--accent-ink); font-weight: 600; }
+  .btn { border: 1px solid var(--line); border-radius: 8px; flex: 1; }
+  select, input[type=number] { flex: 1; min-width: 0; background: rgba(255,255,255,0.06); color: var(--text);
+    border: 1px solid var(--line); border-radius: 8px; padding: 7px 6px; font: inherit; }
+  select option { background: #1b1c22; }
+  .check { display: flex; gap: 8px; align-items: center; margin: 4px 0; cursor: pointer; }
+  .check input { accent-color: var(--accent); width: 16px; height: 16px; }
+  #parts { max-height: 220px; overflow-y: auto; }
+  .small { font-size: 11px; color: var(--muted); overflow-wrap: anywhere; }
+  .grid3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+  .grid3 label { display: block; color: var(--muted); font-size: 11px; margin-bottom: 2px; }
+  .grid3 input { width: 100%; }
+  #drop { position: fixed; inset: 0; z-index: 9; display: none; place-items: center; background: rgba(20,60,120,.55);
+    font-size: 22px; font-weight: 600; pointer-events: none; }
+  body.dragging #drop { display: grid; }
+  .env-only { display: none; }
+  body.kind-env .env-only { display: block; }
+  body.kind-env .obj-only { display: none; }
+</style>
+</head>
+<body>
+<div id="stage"></div>
+
+<div class="ui" id="hud"><span id="modeChip">LOOK</span><span id="hint"></span></div>
+<div class="ui" id="status"></div>
+<div class="ui" id="drop">Drop a model to load it</div>
+<button class="ui" id="panelToggle" title="Show / hide controls">☰</button>
+
+<div class="ui" id="panel">
+  <section>
+    <h2>Model</h2>
+    <div class="row"><select id="modelSel"></select></div>
+    <div class="row"><button class="btn" id="openBtn">Open file…</button><input type="file" id="fileIn" hidden
+      accept=".glb,.gltf,.obj,.fbx,.stl,.zip"></div>
+    <div class="small">GLB, OBJ, FBX, STL, or a Sketchfab glTF .zip. You can also drop a file onto the window.</div>
+    <div class="row"><label>Use as</label><div class="seg" id="kindSeg">
+      <button data-kind="object">Object</button><button data-kind="environment">Environment</button></div></div>
+  </section>
+
+  <section class="env-only">
+    <h2>Environment</h2>
+    <div class="small" id="envSize"></div>
+    <div class="row"><label>Units</label><select id="envUnits">
+      <option value="auto">Auto</option><option value="m">Metres</option><option value="cm">Centimetres</option>
+      <option value="mm">Millimetres</option><option value="in">Inches</option></select></div>
+    <div class="row"><label>Floor</label><input type="range" id="envFloor" min="-3" max="3" step="0.01"><output id="envFloorOut"></output></div>
+    <div class="row"><label>Turn</label><input type="range" id="envYaw" min="-180" max="180" step="1"><output id="envYawOut"></output></div>
+    <div class="row"><label>Stand X</label><input type="range" id="envX" step="0.01"><output id="envXOut"></output></div>
+    <div class="row"><label>Stand Z</label><input type="range" id="envZ" step="0.01"><output id="envZOut"></output></div>
+    <div class="row"><button class="btn" id="tapMove">Tap to stand here</button><button class="btn" id="envCentre">Centre</button></div>
+    <div class="row"><button class="btn" id="envReset">Reset placement</button></div>
+    <div class="small">Floor: raise or lower the scene until its floor meets the real floor. Turn: line its walls up with the room's (the room edges help).
+      W A S D steps you through it (Shift = 1 m steps). Hide ceilings or clutter under Parts.</div>
+  </section>
+
+  <section class="obj-only">
+    <h2>Mode</h2>
+    <div class="row seg"><button id="modeLook">Look around</button><button id="modeObject">Handle object</button></div>
+    <div class="row">
+      <button class="btn" id="spinBtn">Turntable</button>
+      <button class="btn" id="resetObj">Reset object</button>
+    </div>
+    <div class="row"><label>Size</label><input type="range" id="size" min="-2.3" max="2.3" step="0.01"><output id="sizeOut"></output></div>
+  </section>
+
+  <section class="obj-only">
+    <h2>Placement</h2>
+    <div class="row seg" id="wallSeg">
+      <button data-wall="front">Front</button><button data-wall="right">Right</button>
+      <button data-wall="back">Back</button><button data-wall="left">Left</button>
+    </div>
+    <div class="row"><button class="btn" id="toFacing">Move to the wall I'm facing</button></div>
+    <div class="row"><label>Distance</label><input type="range" id="dist" min="0.5" max="4" step="0.01"><output id="distOut"></output></div>
+    <div class="row"><label>Height</label><input type="range" id="height" min="0.1" max="2.6" step="0.01"><output id="heightOut"></output></div>
+    <div class="row"><label>Sideways</label><input type="range" id="side" min="-3" max="3" step="0.01"><output id="sideOut"></output></div>
+  </section>
+
+  <section class="obj-only">
+    <h2>Cutaway</h2>
+    <label class="check"><input type="checkbox" id="cutOn"> Cut the model open</label>
+    <div class="row"><label>Direction</label><div class="seg" id="axisSeg">
+      <button data-axis="x">Side</button><button data-axis="y">Top</button><button data-axis="z">Front</button></div></div>
+    <div class="row"><label>Depth</label><input type="range" id="cutPos" min="-1" max="1" step="0.005"><output id="cutOut"></output></div>
+    <label class="check"><input type="checkbox" id="cutFlip"> Cut from the other side</label>
+  </section>
+
+  <section>
+    <h2>Parts</h2>
+    <div class="row"><button class="btn" id="partsAll">Show all</button><button class="btn" id="partsNone">Hide all</button></div>
+    <div id="parts"></div>
+  </section>
+
+  <section>
+    <h2>Display</h2>
+    <div class="row"><label>Backdrop</label><div class="seg" id="bgSeg">
+      <button data-bg="dark">Dark</button><button data-bg="light">Light</button></div></div>
+    <div class="row"><label>Brightness</label><input type="range" id="exposure" min="0.2" max="3" step="0.01"><output id="exposureOut"></output></div>
+    <label class="check"><input type="checkbox" id="edgesOn"> Show room edges (this screen only)</label>
+  </section>
+
+  <section>
+    <h2>Room (metres)</h2>
+    <div class="grid3">
+      <div><label>Width</label><input type="number" id="roomW" step="0.01" min="1"></div>
+      <div><label>Depth</label><input type="number" id="roomD" step="0.01" min="1"></div>
+      <div><label>Height</label><input type="number" id="roomH" step="0.01" min="1"></div>
+      <div><label>Proj. centre</label><input type="number" id="roomP" step="0.01" min="0.1" placeholder="½ height"></div>
+      <div><label>Your eyes</label><input type="number" id="roomE" step="0.01" min="0.5"></div>
+      <div><label>&nbsp;</label><button class="btn" id="roomReset" style="width:100%">Default</button></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Igloo</h2>
+    <div class="small" id="syncInfo"></div>
+  </section>
+</div>
+
+<script type="module" src="./main.js"></script>
+</body>
+</html>
